@@ -1,0 +1,14 @@
+[
+    {
+        "deviceID": "fb0308cf812f",
+        "location": "Graphet",
+        "sensors": [
+            { "node": "a0", "type": "Temperature" },
+            { "node": "a1", "type": "" },
+            { "node": "a2", "type": "Pressure" },
+            { "node": "a3", "type": "" },
+            { "node": "a4", "type": "" },
+            { "node": "a5", "type": "" }
+        ]
+    }
+]
