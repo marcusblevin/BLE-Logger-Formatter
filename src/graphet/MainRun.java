@@ -22,7 +22,7 @@ import com.google.gson.GsonBuilder;
 public class MainRun {
 	
 	private static ArrayList<Double> 	ohms = new ArrayList<Double>();
-	private static ArrayList<Double>		degC = new ArrayList<Double>();
+	private static ArrayList<Double>	degC = new ArrayList<Double>();
 	
 	public static void main(String[] args) {
 		
@@ -37,6 +37,8 @@ public class MainRun {
 		BufferedWriter bw							= null;
 		StringBuilder sb							= null;
 		SimpleDateFormat sdf						= new SimpleDateFormat("yyyy-MM-dd H:m:s");
+		ArrayList<Reading> readingList				= new ArrayList<Reading>();
+		String colHeaders 							= "";
 		setPaceLookupTable("C.RVT");
 		
 		// prompt for back calculating degC or ohms based on a known value
@@ -55,11 +57,11 @@ public class MainRun {
 		System.out.println("Logger Map: "+loggerMap.length);
 		
 		// get mapping of current temperatures to back-calculate voltage
-		Reading[] readingMap = getConvertedReadings("readings.json");
-		System.out.println("Reading Map: "+readingMap.length);
+		ArrayList<SudhirReading> readingMap = getConvertedReadings("readings.json");
+		System.out.println("Reading Map: "+readingMap.size());
 		
 		// get mapping of Pace temperatures
-		ArrayList<Pace> paceMap = getPaceReadings("pace temp dump4.CSV");
+		ArrayList<Pace> paceMap = getPaceReadings("PaceTempLogs.CSV");
 		System.out.println("Pace Map: "+paceMap.size());
 
 		Calendar paceMinDate = null;
@@ -75,6 +77,7 @@ public class MainRun {
 		
 		
 		for (File file : files) {
+			
 			System.out.println("Processing: "+file.getName());
 			
 			// first line of file is comment line
@@ -83,7 +86,7 @@ public class MainRun {
 			
 			// each TimeStamp has 6 entries (a0...a5) for each sensor
 			
-			String colHeaders = "";
+			colHeaders = "";
 			
 			try {
 				br = new BufferedReader(new FileReader(file.getPath()));
@@ -112,18 +115,21 @@ public class MainRun {
 					l = new LinkedList<String>(Arrays.asList(line.split(",")));
 					
 					// find out which sensor this is
-					String[] tmp 		= l.get(0).split("_");
+					String tagName		= l.get(0);
+					String[] tmp 		= tagName.split("_");
 					String deviceID 	= tmp[0];
 					String node 		= tmp[2];
 					String type			= getSensorType(loggerMap, deviceID, node);
 					
-					Date timeStampUTC		= new Date((long)Long.parseLong(l.get(1))*1000);
-					String timeStamp		= sdf.format(timeStampUTC);
+					Calendar timeStampUTC	= Calendar.getInstance();
+					timeStampUTC.setTimeInMillis(Long.parseLong(l.get(1))*1000);
+					//Date timeStampUTC		= new Date((long)Long.parseLong(l.get(1))*1000);
+					String timeStamp		= sdf.format(timeStampUTC.getTime());
 					Double analogRead 		= Double.parseDouble(l.get(2));
 					Double convertedValue 	= null;
 					
 					// building string
-					sb.append(l.get(0)+",");
+					sb.append(tagName+",");
 					sb.append(timeStamp+",");
 					sb.append(analogRead+",");
 					
@@ -137,18 +143,19 @@ public class MainRun {
 							case "Temperature":
 								convertedValue = convertTempLI(analogRead);
 								
-								for (Reading s_read : readingMap) {
-									if (s_read.getTimeUTC().compareTo(timeStampUTC) == 0) {
+								for (SudhirReading s_read : readingMap) {
+									if (s_read.getTimeUTC().getTime() == timeStampUTC.getTimeInMillis()) {
 										// found a matching date already defined
 										SudhirVal = s_read.getDegC();
 										Double s_ohms = calculateVoltage(SudhirVal, "degC");
 										SudhirVoltage = s_ohms / analogRead;
+										readingMap.remove(readingMap.indexOf(s_read)); // remove element from List to decrease list size and improve speed
 										break; // break loop
 									}
 								}
 								
 								// only run if we have values for the time period
-								if (timeStampUTC.getTime() >= paceMinDate.getTimeInMillis()) {
+								if (timeStampUTC.getTimeInMillis() >= paceMinDate.getTimeInMillis()) {
 									for (Pace p_read : paceMap) {
 										Calendar pDate = p_read.getDate();
 										Calendar before = (Calendar) pDate.clone();
@@ -157,8 +164,9 @@ public class MainRun {
 										after.add(Calendar.SECOND, 5);
 										
 										// find the first match to the time stamp within a 10 second window
-										if (timeStampUTC.getTime() >= before.getTimeInMillis() && timeStampUTC.getTime() <= after.getTimeInMillis()) {
+										if (timeStampUTC.getTimeInMillis() >= before.getTimeInMillis() && timeStampUTC.getTimeInMillis() <= after.getTimeInMillis()) {
 											PaceTemp = toCelsius(p_read.getTemperature());
+											paceMap.remove(paceMap.indexOf(p_read)); // remove element from List to decrease list size and improve speed
 											break; // break loop
 										}
 									}
@@ -180,6 +188,11 @@ public class MainRun {
 					sb.append(PaceTemp);
 					
 					sb.append("\n");
+					
+					// add to ArrayList to track all entries for log camparisons
+					if (convertedValue != null && SudhirVal != null) {
+						readingList.add(new Reading(tagName, timeStampUTC, analogRead, convertedValue, SudhirVal, SudhirVoltage, PaceTemp));
+					}
 				}
 				
 				bw.write(sb.toString()); // limit IO by only writing out once to file
@@ -200,6 +213,13 @@ public class MainRun {
 				}
 			} // end try/catch
 		} // end for loop
+		
+		
+		System.out.println("Writing aggregate Excel file");
+		List<String> columns = new LinkedList<String>(Arrays.asList(colHeaders.split(",")));
+		new ExcelWriter("logComparison.xlsx", columns, readingList);
+		
+		
 		
 		System.out.println("done");
 	}
@@ -358,11 +378,12 @@ public class MainRun {
 	 * @param String fname
 	 * @return Reading array
 	 */
-	public static Reading[] getConvertedReadings(String fname) {
-		Reading[] r = null;
+	public static ArrayList<SudhirReading> getConvertedReadings(String fname) {
+		SudhirReading[] r_temp 		= null;
+		ArrayList<SudhirReading> r 	= null;
 		
 		try {
-			Gson gson = new GsonBuilder().registerTypeAdapterFactory(new ArrayAdapterFactory()).create();
+			Gson gson 			= new GsonBuilder().registerTypeAdapterFactory(new ArrayAdapterFactory()).create();
 			BufferedReader br 	= new BufferedReader(new FileReader(fname));
 			String line 		= "";
 			String json			= "";
@@ -373,7 +394,8 @@ public class MainRun {
 			br.close();
 			
 			// convert JSON string to array of objects
-			r = gson.fromJson(json, Reading[].class);
+			r_temp = gson.fromJson(json, SudhirReading[].class);
+			r = new ArrayList<SudhirReading>(Arrays.asList(r_temp)); // convert array to ArrayList			
 			
 		} catch (FileNotFoundException e) {
 			System.out.println("Cannot find "+fname+". Please provide a valid file name/location:");
@@ -404,11 +426,18 @@ public class MainRun {
 		try {
 			BufferedReader br = new BufferedReader(new FileReader(fname));
 
+			/*
 			// skip first 17 lines
 			for (int i=0; i<17; i++) {
 				if ((line = br.readLine()) != null) {
 					// do nothing
 				}
+			}
+			*/
+			
+			// skip first line as column headers
+			if ((line = br.readLine()) != null) {
+				// do nothing
 			}
 			
 			while ((line = br.readLine()) != null) {
@@ -481,16 +510,19 @@ public class MainRun {
 	 * @return Double|null
 	 */
 	public static Double convertTempLI(Double read) {
-		read *= 3.553619604316547; // multiple by voltage of sensor. Back calculated from equations from Sudhir
+		// This step is currently a magic number that should be the voltage of the sensor at the time of the read.
+		// Since we don't have the voltage at the read time have to use an approximation based on existing data. 
+		// Haven't been able to get an explanation from this from Sudhir
+		read *= 3.558300492; // Back calculated from conversions by Sudhir. Should yield ~0.15% average variance
 		//read *= 3.65; // voltage of battery
 		
 		Integer[] k = getTableKeys(read,"ohms");
 		
 		if (k != null) {
-			Double x0	= ohms.get(k[0]);
-			Double y0	= degC.get(k[0]);
-			Double x1	= ohms.get(k[1]);			
-			Double y1	= degC.get(k[1]);
+			Double x0 = ohms.get(k[0]);
+			Double y0 = degC.get(k[0]);
+			Double x1 = ohms.get(k[1]);			
+			Double y1 = degC.get(k[1]);
 			
 			return linearInterpolate(x0,y0,x1,y1,read);
 		} else {

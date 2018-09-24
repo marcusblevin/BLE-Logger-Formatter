@@ -7,5 +7,21 @@
 			<attribute name="javadoc_location" value="jar:file:/C:/Users/mlevin/Documents/GitHub/BLE-Logger-Formatter/lib/gson-2.6.2-javadoc.jar!/"/>
 		</attributes>
 	</classpathentry>
+	<classpathentry kind="lib" path="lib/poi-4.0.0/poi-4.0.0.jar">
+		<attributes>
+			<attribute name="javadoc_location" value="https://poi.apache.org/apidocs"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="lib/poi-4.0.0/ooxml-lib/curvesapi-1.05.jar"/>
+	<classpathentry kind="lib" path="lib/poi-4.0.0/ooxml-lib/xmlbeans-3.0.1.jar"/>
+	<classpathentry kind="lib" path="lib/poi-4.0.0/poi-ooxml-4.0.0.jar"/>
+	<classpathentry kind="lib" path="lib/poi-4.0.0/poi-ooxml-schemas-4.0.0.jar"/>
+	<classpathentry kind="lib" path="lib/poi-4.0.0/commons-codec-1.10.jar"/>
+	<classpathentry kind="lib" path="lib/poi-4.0.0/commons-collections4-4.1.jar"/>
+	<classpathentry kind="lib" path="lib/commons-compress-1.18/commons-compress-1.18.jar" sourcepath="lib/commons-compress-1.18/commons-compress-1.18-sources.jar">
+		<attributes>
+			<attribute name="javadoc_location" value="jar:platform:/resource/BLE-Logger-Formatter/lib/commons-compress-1.18/commons-compress-1.18-javadoc.jar!/"/>
+		</attributes>
+	</classpathentry>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
