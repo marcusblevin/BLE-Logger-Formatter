@@ -6,8 +6,6 @@
  */
 package graphet;
 
-import org.apache.poi.hssf.usermodel.HSSFWorkbook;
-//import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
@@ -49,8 +47,8 @@ public class ExcelWriter {
 			Row headerRow = sheet.createRow(0);
 			
 			// add column headers for formula columns
-			columns.add("G->S Diff");
-			columns.add("S->P Diff");
+			columns.add("G->H Diff");
+			columns.add("H->P Diff");
 			columns.add("G->P Diff");
 			
 			for (int i=0; i<columns.size(); i++) {
@@ -78,7 +76,6 @@ public class ExcelWriter {
 				
 				cell2.setCellType(CellType.NUMERIC);
 				cell3.setCellType(CellType.NUMERIC);
-				cell4.setCellType(CellType.NUMERIC);
 				cell4.setCellType(CellType.NUMERIC);
 				cell5.setCellType(CellType.NUMERIC);
 				cell6.setCellType(CellType.NUMERIC);
