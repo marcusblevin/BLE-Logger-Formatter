@@ -11,7 +11,6 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
-import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Scanner;
@@ -21,15 +20,60 @@ import com.google.gson.GsonBuilder;
 
 public class MainRun {
 	
-	private static ArrayList<Double> 	ohms = new ArrayList<Double>();
-	private static ArrayList<Double>	degC = new ArrayList<Double>();
+	private static ArrayList<Double> 	ohms 				= new ArrayList<Double>();
+	private static ArrayList<Double>	degC 				= new ArrayList<Double>();
+	private static String 				targetDir 			= "C:\\CSVDownloader\\output";
+	private static String 				processedDir		= "C:\\CSVDownloader\\output\\processed\\";
+	private static File 				targetFolder		= new File(targetDir);
+	private static File 				processedFolder		= new File(processedDir); 
 	
 	public static void main(String[] args) {
 		
-		String targetDir 							= "C:\\CSVDownloader\\output";
-		String processedDir							= "C:\\CSVDownloader\\output\\processed\\";
-		File targetFolder							= new File(targetDir);
-		File processedFolder						= new File(processedDir);
+		setPaceLookupTable("C.RVT");
+		
+		
+		// ask user what they want to do
+		Scanner scan 	= new Scanner(System.in);
+		boolean run 	= true;
+		
+		try {
+			while (run) {
+				System.out.println("What would you like to do?");
+				System.out.println("calcVoltage, convertLogs, compareTemps, or exit");
+				String s = scan.nextLine();
+				if (s.equals("exit")) {
+					scan.close();
+					run = false;
+				} else if (s.equals("calcVoltage")) {
+					// prompt for back calculating degC or ohms based on a known value
+					calculateVoltage();
+				} else if (s.equals("convertLogs")) {
+					convertLogs(false);
+					System.out.println("finished");
+				} else if (s.equals("compareTemps")) {
+					convertLogs(true);
+					System.out.println("finished");
+				} else {
+					System.out.println("unrecognized input");
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		} finally {
+			scan.close();
+		}
+		
+		
+		System.out.println("bye");
+	}
+	
+	
+	/**
+	 * Perform actions to read in log files and convert values from analog read to desired format
+	 * @param boolean compare - switch to enable comparing temperatue values with known readings
+	 */
+	public static void convertLogs(boolean compare) {
+		
 		List<File> files							= listFilesInFolder(targetFolder);
 		String line									= "";
 		List<String> l								= null;
@@ -39,12 +83,9 @@ public class MainRun {
 		SimpleDateFormat sdf						= new SimpleDateFormat("yyyy-MM-dd H:m:s");
 		ArrayList<Reading> readingList				= new ArrayList<Reading>();
 		String colHeaders 							= "";
-		setPaceLookupTable("C.RVT");
-		
-		// prompt for back calculating degC or ohms based on a known value
-		//calculateVoltage();
-		
-		
+		ArrayList<SudhirReading> readingMap			= null;
+		ArrayList<Pace> paceMap						= null;
+		Calendar paceMinDate 						= null;
 		
 		
 		// create folder if not exist
@@ -56,22 +97,23 @@ public class MainRun {
 		Logger[] loggerMap = getLoggerMap("loggerMap.json");
 		System.out.println("Logger Map: "+loggerMap.length);
 		
-		// get mapping of current temperatures to back-calculate voltage
-		ArrayList<SudhirReading> readingMap = getConvertedReadings("readings.json");
-		System.out.println("Reading Map: "+readingMap.size());
-		
-		// get mapping of Pace temperatures
-		ArrayList<Pace> paceMap = getPaceReadings("PaceTempLogs.CSV");
-		System.out.println("Pace Map: "+paceMap.size());
-
-		Calendar paceMinDate = null;
-		for (Pace p : paceMap) {
-			try {
-				if (paceMinDate == null || p.getDate().compareTo(paceMinDate) < 0) {
-					paceMinDate = p.getDate();
+		if (compare) {
+			// get mapping of current temperatures to back-calculate voltage
+			readingMap = getConvertedReadings("readings.json");
+			System.out.println("Reading Map: "+readingMap.size());
+			
+			// get mapping of Pace temperatures
+			paceMap = getPaceReadings("PaceTempLogs.CSV");
+			System.out.println("Pace Map: "+paceMap.size());
+	
+			for (Pace p : paceMap) {
+				try {
+					if (paceMinDate == null || p.getDate().compareTo(paceMinDate) < 0) {
+						paceMinDate = p.getDate();
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
 				}
-			} catch (Exception e) {
-				e.printStackTrace();
 			}
 		}
 		
@@ -103,8 +145,10 @@ public class MainRun {
 				if ((line = br.readLine()) != null) {
 					// third line, assuming column order won't change but might want
 					// to add check here to assign column order for below
-					colHeaders = line;
-					colHeaders += ",FormattedValue,SudhirVal,SudhirVoltage,PaceTemp"; 
+					colHeaders = line+",GraphetValue";
+					if (compare) {
+						colHeaders += ",HydroTrekTemp,CalculatedVoltage,PaceTemp";
+					}
 					sb.append(colHeaders);
 					sb.append("\n");
 				}
@@ -143,31 +187,37 @@ public class MainRun {
 							case "Temperature":
 								convertedValue = convertTempLI(analogRead);
 								
-								for (SudhirReading s_read : readingMap) {
-									if (s_read.getTimeUTC().getTime() == timeStampUTC.getTimeInMillis()) {
-										// found a matching date already defined
-										SudhirVal = s_read.getDegC();
-										Double s_ohms = calculateVoltage(SudhirVal, "degC");
-										SudhirVoltage = s_ohms / analogRead;
-										readingMap.remove(readingMap.indexOf(s_read)); // remove element from List to decrease list size and improve speed
-										break; // break loop
-									}
-								}
-								
-								// only run if we have values for the time period
-								if (timeStampUTC.getTimeInMillis() >= paceMinDate.getTimeInMillis()) {
-									for (Pace p_read : paceMap) {
-										Calendar pDate = p_read.getDate();
-										Calendar before = (Calendar) pDate.clone();
-										Calendar after = (Calendar) pDate.clone();
-										before.add(Calendar.SECOND, -5);
-										after.add(Calendar.SECOND, 5);
-										
-										// find the first match to the time stamp within a 10 second window
-										if (timeStampUTC.getTimeInMillis() >= before.getTimeInMillis() && timeStampUTC.getTimeInMillis() <= after.getTimeInMillis()) {
-											PaceTemp = toCelsius(p_read.getTemperature());
-											paceMap.remove(paceMap.indexOf(p_read)); // remove element from List to decrease list size and improve speed
+								if (compare) {
+									for (SudhirReading s_read : readingMap) {
+										if (s_read.getTimeUTC().getTime() == timeStampUTC.getTimeInMillis()) {
+											// found a matching date already defined
+											SudhirVal = s_read.getDegC();
+											Double s_ohms = calculateVoltage(SudhirVal, "degC");
+											SudhirVoltage = s_ohms / analogRead;
+											readingMap.remove(readingMap.indexOf(s_read)); // remove element from List to decrease list size and improve speed
 											break; // break loop
+										}
+									}
+									
+									// only run if we have values for the time period
+									// this step is taking the most time, need to make more efficient
+									if (timeStampUTC.getTimeInMillis() >= paceMinDate.getTimeInMillis()) {
+										for (Pace p_read : paceMap) {
+											Calendar pDate = p_read.getDate();
+											
+											// times don't match up exactly but still in 10 second slices
+											// create 10 second spread of pace value to match up with BLE logger data
+											Calendar before = (Calendar) pDate.clone();
+											Calendar after = (Calendar) pDate.clone();
+											before.add(Calendar.SECOND, -5);
+											after.add(Calendar.SECOND, 5);
+											
+											// find the first match to the time stamp within a 10 second window
+											if (timeStampUTC.getTimeInMillis() >= before.getTimeInMillis() && timeStampUTC.getTimeInMillis() <= after.getTimeInMillis()) {
+												PaceTemp = toCelsius(p_read.getTemperature());
+												paceMap.remove(paceMap.indexOf(p_read)); // remove element from List to decrease list size and improve speed
+												break; // break loop
+											}
 										}
 									}
 								}
@@ -183,19 +233,21 @@ public class MainRun {
 					}
 					
 					sb.append(convertedValue+",");
-					sb.append(SudhirVal+",");
-					sb.append(SudhirVoltage+",");
-					sb.append(PaceTemp);
+					if (compare) {
+						sb.append(SudhirVal+",");
+						sb.append(SudhirVoltage+",");
+						sb.append(PaceTemp);
+					}
 					
 					sb.append("\n");
 					
 					// add to ArrayList to track all entries for log camparisons
-					if (convertedValue != null && SudhirVal != null) {
+					if (compare && convertedValue != null && SudhirVal != null) {
 						readingList.add(new Reading(tagName, timeStampUTC, analogRead, convertedValue, SudhirVal, SudhirVoltage, PaceTemp));
 					}
 				}
 				
-				bw.write(sb.toString()); // limit IO by only writing out once to file
+				bw.write(sb.toString()); // limit I/O by only writing out once to file
 				
 			} catch (IOException e) {
 				e.printStackTrace();
@@ -215,14 +267,15 @@ public class MainRun {
 		} // end for loop
 		
 		
-		System.out.println("Writing aggregate Excel file");
-		List<String> columns = new LinkedList<String>(Arrays.asList(colHeaders.split(",")));
-		new ExcelWriter("logComparison.xlsx", columns, readingList);
-		
-		
-		
-		System.out.println("done");
+		if (compare) {
+			System.out.println("Writing aggregate Excel file");
+			List<String> columns = new LinkedList<String>(Arrays.asList(colHeaders.split(",")));
+			new ExcelWriter("logComparison.xlsx", columns, readingList);
+		}
 	}
+	
+	
+	
 	
 	/**
 	 * Use linear interpolation to find missing value given known value
@@ -545,6 +598,12 @@ public class MainRun {
 		return (y0*(x1-x) + y1*(x-x0))/(x1-x0);
 	}
 	
+	/**
+	 * Traverse through degC or ohms arrays to find keys corresponding to the value range the provided value falls between 
+	 * @param Double r - value search for in range
+	 * @param String s - degC or ohms
+	 * @return
+	 */
 	public static Integer[] getTableKeys(Double r, String s) {
 		Integer[] k = new Integer[2];
 		
@@ -555,6 +614,7 @@ public class MainRun {
 				if ((i+1) <= degC.size() && degC.get(i) <= r && degC.get(i+1) >= r) {
 					k[0] = i;
 					k[1] = i+1;
+					i = degC.size(); // exit
 				}
 			}
 		} else {
@@ -562,6 +622,7 @@ public class MainRun {
 				if ((i+1) <= ohms.size() && ohms.get(i) >= r && ohms.get(i+1) <= r) {
 					k[0] = i;
 					k[1] = i+1;
+					i = ohms.size(); // exit
 				}
 			}
 		}
@@ -575,13 +636,10 @@ public class MainRun {
 	
 	/**
 	 * Convert analog read temperatue to Celsius. Equations received from Sudhir extrapolated from Pace logger lookup table
-	 * Analog read needs to be multiplied by the voltage fed in to the sensor to get Ohms
 	 * @param read
 	 * @return Double|null
 	 */
 	public static Double convertTemp(Double read) {
-		//read *= 3.553619604316547; // multiple by voltage of sensor. Back calculated from equations from Sudhir
-		//read *= 3.7; // voltage of battery
 		Double t = null;
 		if (read >= 0 && read <= 1000) {
 			t = 799.82 * Math.pow(read,-0.266);
