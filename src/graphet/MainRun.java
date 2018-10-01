@@ -99,7 +99,7 @@ public class MainRun {
 		
 		if (compare) {
 			// get mapping of current temperatures to back-calculate voltage
-			readingMap = getConvertedReadings("readings.json");
+			readingMap = getConvertedReadings("HydroTrekReadings.json");
 			System.out.println("Reading Map: "+readingMap.size());
 			
 			// get mapping of Pace temperatures
